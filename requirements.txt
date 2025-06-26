@@ -1,3 +1,70 @@
-streamlit
-google-generativeai
-pandas
+# Qforia Pro - Advanced Writing Intelligence Suite
+# Python Dependencies
+
+# Core Framework
+streamlit>=1.28.0
+
+# AI/ML APIs
+google-generativeai>=0.3.0
+openai>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# JSON and Data Handling
+jsonschema>=4.17.0
+pydantic>=2.0.0
+
+# Visualization
+plotly>=5.15.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Text Processing
+nltk>=3.8.0
+textblob>=0.17.0
+spacy>=3.6.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+tqdm>=4.65.0
+
+# File Processing
+openpyxl>=3.1.0
+xlsxwriter>=3.1.0
+python-docx>=0.8.11
+
+# Web Scraping (if needed)
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Caching and Performance
+streamlit-option-menu>=0.3.6
+streamlit-aggrid>=0.3.4
+streamlit-plotly-events>=0.0.6
+
+# Security and Environment
+python-dotenv>=1.0.0
+cryptography>=41.0.0
+
+# Data Science
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# Additional Streamlit Components
+streamlit-extras>=0.3.0
+streamlit-elements>=0.1.0
+
+# Export and Reporting
+fpdf2>=2.7.0
+reportlab>=4.0.0
+
+# Optional: For advanced analytics
+wordcloud>=1.9.0
+networkx>=3.1.0
