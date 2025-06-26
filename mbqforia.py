@@ -11,7 +11,7 @@ st.title("🔍 Qforia: Query Fan-Out Simulator for AI Surfaces")
 # Sidebar: API key input and query
 st.sidebar.header("Configuration")
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
-user_query = st.sidebar.text_area("Enter your query", "What's the best electric SUV for driving up mt rainier?", height=120)
+user_query = st.sidebar.text_area("Enter your query", "Why to Invest in Bangalore", height=120)
 mode = st.sidebar.radio("Search Mode", ["AI Overview (simple)", "AI Mode (complex)"])
 
 # Configure Gemini
