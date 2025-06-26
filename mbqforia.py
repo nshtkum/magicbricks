@@ -102,21 +102,64 @@ def call_perplexity_api(query: str) -> Dict[str, Any]:
     except Exception as e:
         return {"error": f"API error: {str(e)}"}
 
-def extract_numbers(text: str) -> List[str]:
-    """Extract numerical data from text"""
-    patterns = [
-        r'\d+(?:\.\d+)?%',  # Percentages
-        r'\$\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:billion|million|thousand|crore|lakh))?',  # Currency
-        r'\d+(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|thousand|crore|lakh)',  # Large numbers
-        r'\d{4}(?:-\d{4})?',  # Years
-    ]
+def extract_data_points(text: str) -> List[Dict[str, str]]:
+    """Extract numerical data with context from text"""
+    data_points = []
     
-    numbers = []
-    for pattern in patterns:
-        matches = re.findall(pattern, text, re.IGNORECASE)
-        numbers.extend(matches)
+    # Split text into sentences
+    sentences = re.split(r'[.!?]+', text)
     
-    return list(set(numbers))  # Remove duplicates
+    for sentence in sentences:
+        sentence = sentence.strip()
+        if len(sentence) < 10:  # Skip very short sentences
+            continue
+            
+        # Look for patterns with context
+        patterns = [
+            (r'(\d+(?:\.\d+)?%)', 'Percentage'),
+            (r'(\$\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:billion|million|thousand|crore|lakh))?)', 'Currency'),
+            (r'(₹\d+(?:,\d{3})*(?:\.\d+)?(?:\s*(?:billion|million|thousand|crore|lakh))?)', 'Currency'),
+            (r'(\d+(?:,\d{3})*(?:\.\d+)?\s*(?:billion|million|thousand|crore|lakh))', 'Large Number'),
+            (r'(\d{4}(?:-\d{4})?)', 'Year'),
+            (r'(\d+(?:\.\d+)?\s*(?:sq\s*ft|acres|hectares|sqft))', 'Area'),
+            (r'(\d+(?:\.\d+)?\s*(?:years?|months?|days?))', 'Time Period'),
+        ]
+        
+        for pattern, data_type in patterns:
+            matches = re.findall(pattern, sentence, re.IGNORECASE)
+            for match in matches:
+                if isinstance(match, tuple):
+                    match = match[0] if match[0] else match[1]
+                
+                # Clean up the sentence for context
+                context = sentence.replace('\n', ' ').strip()
+                if len(context) > 150:
+                    # Find the position of the match and extract surrounding context
+                    match_pos = context.find(match)
+                    start = max(0, match_pos - 75)
+                    end = min(len(context), match_pos + 75)
+                    context = context[start:end]
+                    if start > 0:
+                        context = "..." + context
+                    if end < len(sentence):
+                        context = context + "..."
+                
+                data_points.append({
+                    'value': match,
+                    'type': data_type,
+                    'description': context
+                })
+    
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_data_points = []
+    for dp in data_points:
+        identifier = (dp['value'], dp['type'])
+        if identifier not in seen:
+            seen.add(identifier)
+            unique_data_points.append(dp)
+    
+    return unique_data_points
 
 # Query Fan-Out Function (Original)
 def QUERY_FANOUT_PROMPT(q, mode):
@@ -286,19 +329,19 @@ if st.session_state.fanout_results:
                     
                     if 'choices' in response:
                         content = response['choices'][0]['message']['content']
-                        numbers = extract_numbers(content)
+                        data_points = extract_data_points(content)
                         
                         research_results.append({
                             'query': query_text,
                             'research_content': content,
-                            'key_numbers': numbers,
+                            'data_points': data_points,
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
                         })
                     else:
                         research_results.append({
                             'query': query_text,
                             'research_content': f"Error: {response.get('error', 'Unknown error')}",
-                            'key_numbers': [],
+                            'data_points': [],
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M')
                         })
                 
@@ -317,8 +360,8 @@ if st.session_state.fanout_results:
                 with col1:
                     st.metric("Queries Researched", len(research_results))
                 with col2:
-                    total_numbers = sum(len(r['key_numbers']) for r in research_results)
-                    st.metric("Data Points Found", total_numbers)
+                    total_data_points = sum(len(r['data_points']) for r in research_results)
+                    st.metric("Data Points Found", total_data_points)
                 with col3:
                     successful = sum(1 for r in research_results if 'Error:' not in r['research_content'])
                     st.metric("Success Rate", f"{(successful/len(research_results)*100):.0f}%")
@@ -334,15 +377,33 @@ if st.session_state.fanout_results:
                         st.markdown("**Research Findings:**")
                         st.markdown(result['research_content'])
                         
-                        # Key numbers
-                        if result['key_numbers']:
+                        # Data points in table format
+                        if result['data_points']:
                             st.markdown("**📊 Key Data Points:**")
-                            for number in result['key_numbers']:
-                                st.markdown(f"""
-                                <div class="data-point">
-                                    <span class="numerical-highlight">{number}</span>
-                                </div>
-                                """, unsafe_allow_html=True)
+                            
+                            # Create DataFrame for better display
+                            df_data = []
+                            for dp in result['data_points']:
+                                df_data.append({
+                                    'Value': dp['value'],
+                                    'Type': dp['type'],
+                                    'Description': dp['description']
+                                })
+                            
+                            if df_data:
+                                data_df = pd.DataFrame(df_data)
+                                st.dataframe(
+                                    data_df,
+                                    use_container_width=True,
+                                    column_config={
+                                        "Value": st.column_config.TextColumn("Value", width="small"),
+                                        "Type": st.column_config.TextColumn("Type", width="small"),
+                                        "Description": st.column_config.TextColumn("Context/Description", width="large")
+                                    },
+                                    hide_index=True
+                                )
+                        else:
+                            st.info("No specific data points extracted from this research.")
                         
                         st.caption(f"Researched on: {result['timestamp']}")
                 
@@ -352,15 +413,28 @@ if st.session_state.fanout_results:
                 # Create comprehensive dataset
                 export_data = []
                 for result in research_results:
-                    export_data.append({
-                        'Original_Query': user_query,
-                        'Research_Query': result['query'],
-                        'Research_Content': result['research_content'],
-                        'Key_Numbers': ', '.join(result['key_numbers']),
-                        'Number_Count': len(result['key_numbers']),
-                        'Research_Focus': research_focus,
-                        'Timestamp': result['timestamp']
-                    })
+                    for dp in result.get('data_points', []):
+                        export_data.append({
+                            'Original_Query': user_query,
+                            'Research_Query': result['query'],
+                            'Data_Value': dp['value'],
+                            'Data_Type': dp['type'],
+                            'Context_Description': dp['description'],
+                            'Research_Focus': research_focus,
+                            'Timestamp': result['timestamp']
+                        })
+                    
+                    # Also add a summary row for queries without data points
+                    if not result.get('data_points'):
+                        export_data.append({
+                            'Original_Query': user_query,
+                            'Research_Query': result['query'],
+                            'Data_Value': 'No data extracted',
+                            'Data_Type': 'N/A',
+                            'Context_Description': result['research_content'][:200] + '...',
+                            'Research_Focus': research_focus,
+                            'Timestamp': result['timestamp']
+                        })
                 
                 research_df = pd.DataFrame(export_data)
                 
@@ -395,14 +469,17 @@ if st.session_state.fanout_results:
 **Focus Area:** {research_focus}
 **Queries Researched:** {len(research_results)}
 
-## Key Findings Summary
+## Key Data Points Summary
 
 """
                     for result in research_results:
                         brief += f"\n### {result['query']}\n"
                         brief += f"{result['research_content'][:300]}...\n"
-                        if result['key_numbers']:
-                            brief += f"\n**Key Data:** {', '.join(result['key_numbers'][:5])}\n"
+                        
+                        if result.get('data_points'):
+                            brief += f"\n**Key Data Found:**\n"
+                            for dp in result['data_points'][:5]:  # Top 5 data points
+                                brief += f"- **{dp['value']}** ({dp['type']}): {dp['description'][:100]}...\n"
                         brief += "\n---\n"
                     
                     st.download_button(
@@ -425,20 +502,43 @@ if st.button("🔍 Verify Facts") and fact_query:
         
         if 'choices' in response:
             fact_result = response['choices'][0]['message']['content']
-            numbers = extract_numbers(fact_result)
+            data_points = extract_data_points(fact_result)
             
             col1, col2 = st.columns([3, 1])
             
             with col1:
                 st.subheader("📋 Fact-Check Results")
                 st.markdown(fact_result)
+                
+                # Show data points in table if found
+                if data_points:
+                    st.subheader("📊 Extracted Data Points")
+                    df_data = []
+                    for dp in data_points:
+                        df_data.append({
+                            'Value': dp['value'],
+                            'Type': dp['type'],
+                            'Description': dp['description']
+                        })
+                    
+                    fact_df = pd.DataFrame(df_data)
+                    st.dataframe(
+                        fact_df,
+                        use_container_width=True,
+                        column_config={
+                            "Value": st.column_config.TextColumn("Value", width="small"),
+                            "Type": st.column_config.TextColumn("Type", width="small"),
+                            "Description": st.column_config.TextColumn("Context", width="large")
+                        },
+                        hide_index=True
+                    )
             
             with col2:
-                st.subheader("📊 Data Found")
-                st.metric("Numbers Extracted", len(numbers))
-                if numbers:
-                    for num in numbers[:5]:  # Show first 5
-                        st.markdown(f"• **{num}**")
+                st.subheader("📊 Summary")
+                st.metric("Data Points Found", len(data_points))
+                if data_points:
+                    for dp in data_points[:3]:  # Show first 3
+                        st.markdown(f"• **{dp['value']}** ({dp['type']})")
         else:
             st.error("Fact-check failed. Please try again.")
 
