@@ -88,7 +88,14 @@ def call_perplexity_api(query):
                 {"role": "user", "content": query}
             ],
             "temperature": 0.2,
-            "max_tokens": 1000
+            "max_tokens": 1000,
+            "return_citations": True,
+            "search_domain_filter": ["perplexity.ai"],
+            "return_images": False,
+            "return_related_questions": False,
+            "search_recency_filter": "month",
+            "top_p": 0.9,
+            "stream": False
         }
         
         response = requests.post("https://api.perplexity.ai/chat/completions", 
@@ -97,11 +104,32 @@ def call_perplexity_api(query):
         if response.status_code == 200:
             st.session_state.api_usage['perplexity_calls'] += 1
             return response.json()
+        elif response.status_code == 400:
+            # Try with simpler parameters
+            simple_data = {
+                "model": "llama-3.1-sonar-large-128k-online",
+                "messages": [
+                    {"role": "user", "content": query}
+                ],
+                "max_tokens": 1000,
+                "temperature": 0.2
+            }
+            
+            simple_response = requests.post("https://api.perplexity.ai/chat/completions", 
+                                          headers=headers, json=simple_data, timeout=30)
+            
+            if simple_response.status_code == 200:
+                st.session_state.api_usage['perplexity_calls'] += 1
+                return simple_response.json()
+            else:
+                error_details = simple_response.text if simple_response.text else "No error details"
+                return {"error": f"API call failed with status {simple_response.status_code}. Details: {error_details}"}
         else:
-            return {"error": f"API call failed with status {response.status_code}"}
+            error_details = response.text if response.text else "No error details"
+            return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
     
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Exception occurred: {str(e)}"}
 
 def call_perplexity_answer_api(query):
     """Call Perplexity Answer API for fact-checking"""
@@ -114,8 +142,7 @@ def call_perplexity_answer_api(query):
         data = {
             "model": "llama-3.1-sonar-large-128k-online",
             "messages": [
-                {"role": "system", "content": "You are a fact-checker. Provide accurate, well-sourced information."},
-                {"role": "user", "content": query}
+                {"role": "user", "content": f"Please provide a factual answer with sources for: {query}"}
             ],
             "temperature": 0.1,
             "max_tokens": 800
@@ -135,10 +162,11 @@ def call_perplexity_answer_api(query):
             else:
                 return {"error": "No answer received"}
         else:
-            return {"error": f"API call failed with status {response.status_code}"}
+            error_details = response.text if response.text else "No error details"
+            return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
     
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": f"Exception occurred: {str(e)}"}
 
 def extract_data_points(text):
     """Extract numerical data points from text"""
