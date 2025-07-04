@@ -64,8 +64,39 @@ try:
     perplexity_key = st.secrets["api_keys"]["PERPLEXITY_API_KEY"]
     st.sidebar.success("🔑 API Keys loaded from secrets")
 except:
-    gemini_key = st.sidebar.text_input("Gemini API Key", type="password", value="AIzaSyDkJmnEXe85gbYjESn80csSqwpdd0RZbx8")
-    perplexity_key = st.sidebar.text_input("Perplexity API Key", type="password", value="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")
+    gemini_key = st.sidebar.text_input("Gemini API Key", type="password", help="Enter your Google Gemini API key")
+    perplexity_key = st.sidebar.text_input("Perplexity API Key", type="password", help="Enter your Perplexity API key")
+
+# Validate API keys
+if not perplexity_key or not perplexity_key.startswith('pplx-'):
+    st.sidebar.warning("⚠️ Valid Perplexity API key required (starts with 'pplx-')")
+if not gemini_key:
+    st.sidebar.warning("⚠️ Gemini API key required")
+
+# Add API testing section
+if st.sidebar.button("🧪 Test API Connection"):
+    if perplexity_key and perplexity_key.startswith('pplx-'):
+        with st.sidebar.spinner("Testing Perplexity API..."):
+            test_response = call_perplexity_api("What is the capital of France?")
+            if 'choices' in test_response:
+                st.sidebar.success("✅ Perplexity API working")
+                st.sidebar.info(f"Model used: {test_response.get('model', 'sonar-pro')}")
+            else:
+                st.sidebar.error(f"❌ Perplexity API error: {test_response.get('error', 'Unknown')}")
+    else:
+        st.sidebar.error("❌ Invalid Perplexity API key")
+
+# Model information
+st.sidebar.subheader("📋 Available Models")
+st.sidebar.markdown("""
+**Current Models:**
+- `sonar-pro` (Recommended)
+- `llama-3.1-sonar-large-128k-online`
+- `llama-3.1-sonar-small-128k-online`
+
+**Note:** Model availability may change.
+Check [Perplexity Docs](https://docs.perplexity.ai/guides/model-cards) for updates.
+""")
 
 # Configure Gemini
 if gemini_key:
@@ -81,21 +112,15 @@ def call_perplexity_api(query):
             "Content-Type": "application/json"
         }
         
+        # Use the correct current model name
         data = {
-            "model": "llama-3.1-sonar-large-128k-online",
+            "model": "sonar-pro",  # Updated to current valid model
             "messages": [
                 {"role": "system", "content": "You are a helpful research assistant. Provide detailed, factual information with specific numbers and statistics where available."},
                 {"role": "user", "content": query}
             ],
             "temperature": 0.2,
-            "max_tokens": 1000,
-            "return_citations": True,
-            "search_domain_filter": ["perplexity.ai"],
-            "return_images": False,
-            "return_related_questions": False,
-            "search_recency_filter": "month",
-            "top_p": 0.9,
-            "stream": False
+            "max_tokens": 1000
         }
         
         response = requests.post("https://api.perplexity.ai/chat/completions", 
@@ -105,25 +130,32 @@ def call_perplexity_api(query):
             st.session_state.api_usage['perplexity_calls'] += 1
             return response.json()
         elif response.status_code == 400:
-            # Try with simpler parameters
-            simple_data = {
-                "model": "llama-3.1-sonar-large-128k-online",
-                "messages": [
-                    {"role": "user", "content": query}
-                ],
-                "max_tokens": 1000,
-                "temperature": 0.2
-            }
+            # Try with alternative model if sonar-pro doesn't work
+            alternative_models = [
+                "llama-3.1-sonar-large-128k-online",
+                "llama-3.1-sonar-small-128k-online"
+            ]
             
-            simple_response = requests.post("https://api.perplexity.ai/chat/completions", 
-                                          headers=headers, json=simple_data, timeout=30)
+            for model in alternative_models:
+                simple_data = {
+                    "model": model,
+                    "messages": [
+                        {"role": "user", "content": query}
+                    ],
+                    "max_tokens": 1000,
+                    "temperature": 0.2
+                }
+                
+                simple_response = requests.post("https://api.perplexity.ai/chat/completions", 
+                                              headers=headers, json=simple_data, timeout=30)
+                
+                if simple_response.status_code == 200:
+                    st.session_state.api_usage['perplexity_calls'] += 1
+                    return simple_response.json()
             
-            if simple_response.status_code == 200:
-                st.session_state.api_usage['perplexity_calls'] += 1
-                return simple_response.json()
-            else:
-                error_details = simple_response.text if simple_response.text else "No error details"
-                return {"error": f"API call failed with status {simple_response.status_code}. Details: {error_details}"}
+            # If all models fail, return error
+            error_details = response.text if response.text else "No error details"
+            return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
         else:
             error_details = response.text if response.text else "No error details"
             return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
@@ -140,7 +172,7 @@ def call_perplexity_answer_api(query):
         }
         
         data = {
-            "model": "llama-3.1-sonar-large-128k-online",
+            "model": "sonar-pro",  # Updated to current valid model
             "messages": [
                 {"role": "user", "content": f"Please provide a factual answer with sources for: {query}"}
             ],
