@@ -73,28 +73,76 @@ if gemini_key:
     model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 # API Functions
-# Quick Fact Checker with Perplexity /answer
-st.markdown("---")
-st.header("🔍 Quick Fact Checker")
-
-fact_query = st.text_input("Enter a statement or topic to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
-
-if st.button("🔍 Verify Facts") and fact_query:
-    with st.spinner("Fact-checking via Perplexity..."):
-        response = call_perplexity_answer_api(fact_query)
-
-        if 'answer' in response:
-            st.subheader("📋 Fact-Based Answer")
-            st.markdown(response['answer'])
-
-            if 'sources' in response:
-                st.subheader("🔗 Sources & References")
-                for source in response['sources']:
-                    title = source.get("title", "Source")
-                    url = source.get("url", "")
-                    st.markdown(f"- [{title}]({url})")
+def call_perplexity_api(query):
+    """Call Perplexity API for research"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {perplexity_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "llama-3.1-sonar-large-128k-online",
+            "messages": [
+                {"role": "system", "content": "You are a helpful research assistant. Provide detailed, factual information with specific numbers and statistics where available."},
+                {"role": "user", "content": query}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1000
+        }
+        
+        response = requests.post("https://api.perplexity.ai/chat/completions", 
+                               headers=headers, json=data, timeout=30)
+        
+        if response.status_code == 200:
+            st.session_state.api_usage['perplexity_calls'] += 1
+            return response.json()
         else:
-            st.error(response.get("error", "Unknown error."))
+            return {"error": f"API call failed with status {response.status_code}"}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+def call_perplexity_answer_api(query):
+    """Call Perplexity Answer API for fact-checking"""
+    try:
+        headers = {
+            "Authorization": f"Bearer {perplexity_key}",
+            "Content-Type": "application/json"
+        }
+        
+        data = {
+            "model": "llama-3.1-sonar-large-128k-online",
+            "messages": [
+                {"role": "system", "content": "You are a fact-checker. Provide accurate, well-sourced information."},
+                {"role": "user", "content": query}
+            ],
+            "temperature": 0.1,
+            "max_tokens": 800
+        }
+        
+        response = requests.post("https://api.perplexity.ai/chat/completions", 
+                               headers=headers, json=data, timeout=30)
+        
+        if response.status_code == 200:
+            st.session_state.api_usage['perplexity_calls'] += 1
+            result = response.json()
+            
+            # Extract answer from response
+            if 'choices' in result and result['choices']:
+                answer = result['choices'][0]['message']['content']
+                return {"answer": answer, "sources": []}  # Simplified response
+            else:
+                return {"error": "No answer received"}
+        else:
+            return {"error": f"API call failed with status {response.status_code}"}
+    
+    except Exception as e:
+        return {"error": str(e)}
+
+def extract_data_points(text):
+    """Extract numerical data points from text"""
+    data_points = []
     
     # Split text into sentences
     sentences = re.split(r'[.!?]+', text)
@@ -479,7 +527,7 @@ if st.session_state.fanout_results:
                         mime="text/markdown"
                     )
 
-# Quick Fact Checker with Perplexity /answer
+# Quick Fact Checker with Perplexity
 st.markdown("---")
 st.header("🔍 Quick Fact Checker")
 
@@ -490,18 +538,15 @@ if st.button("🔍 Verify Facts") and fact_query:
         response = call_perplexity_answer_api(fact_query)
 
         if 'answer' in response:
-            st.subheader("📋 Fact-Based Answer")
-            st.markdown(response['answer'])
-
-            if 'sources' in response:
-                st.subheader("🔗 Sources & References")
-                for source in response['sources']:
-                    title = source.get("title", "Source")
-                    url = source.get("url", "")
-                    st.markdown(f"- [{title}]({url})")
-        else:
-            st.error(response.get("error", "Unknown error."))
-
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.subheader("📋 Fact-Based Answer")
+                st.markdown(response['answer'])
+                
+                # Extract and display data points
+                data_points = extract_data_points(response['answer'])
+                
                 # Show data points in table if found
                 if data_points:
                     st.subheader("📊 Extracted Data Points")
@@ -531,8 +576,15 @@ if st.button("🔍 Verify Facts") and fact_query:
                 if data_points:
                     for dp in data_points[:3]:  # Show first 3
                         st.markdown(f"• **{dp['value']}** ({dp['type']})")
+                        
+            if 'sources' in response and response['sources']:
+                st.subheader("🔗 Sources & References")
+                for source in response['sources']:
+                    title = source.get("title", "Source")
+                    url = source.get("url", "")
+                    st.markdown(f"- [{title}]({url})")
         else:
-            st.error("Fact-check failed. Please try again.")
+            st.error(response.get("error", "Unknown error."))
 
 # Footer
 st.markdown("---")
