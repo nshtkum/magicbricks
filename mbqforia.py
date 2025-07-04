@@ -73,38 +73,28 @@ if gemini_key:
     model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 # API Functions
-def call_perplexity_api(query: str) -> Dict[str, Any]:
-    """Call Perplexity API for fact-checking and research"""
-    if not perplexity_key:
-        return {"error": "Perplexity API key not provided"}
-    
-    headers = {
-        "Authorization": f"Bearer {perplexity_key}",
-        "Content-Type": "application/json"
-    }
-    
-    data = {
-        "model": "llama-3.1-sonar-small-128k-online",
-        "messages": [
-            {"role": "system", "content": "Provide factual information with specific numbers, statistics, and data points. Be concise but comprehensive."},
-            {"role": "user", "content": query}
-        ],
-        "max_tokens": 1000,
-        "temperature": 0.2
-    }
-    
-    try:
-        response = requests.post("https://api.perplexity.ai/chat/completions", 
-                               headers=headers, json=data, timeout=30)
-        response.raise_for_status()
-        st.session_state.api_usage['perplexity_calls'] += 1
-        return response.json()
-    except Exception as e:
-        return {"error": f"API error: {str(e)}"}
+# Quick Fact Checker with Perplexity /answer
+st.markdown("---")
+st.header("🔍 Quick Fact Checker")
 
-def extract_data_points(text: str) -> List[Dict[str, str]]:
-    """Extract numerical data with context from text"""
-    data_points = []
+fact_query = st.text_input("Enter a statement or topic to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
+
+if st.button("🔍 Verify Facts") and fact_query:
+    with st.spinner("Fact-checking via Perplexity..."):
+        response = call_perplexity_answer_api(fact_query)
+
+        if 'answer' in response:
+            st.subheader("📋 Fact-Based Answer")
+            st.markdown(response['answer'])
+
+            if 'sources' in response:
+                st.subheader("🔗 Sources & References")
+                for source in response['sources']:
+                    title = source.get("title", "Source")
+                    url = source.get("url", "")
+                    st.markdown(f"- [{title}]({url})")
+        else:
+            st.error(response.get("error", "Unknown error."))
     
     # Split text into sentences
     sentences = re.split(r'[.!?]+', text)
@@ -489,27 +479,29 @@ if st.session_state.fanout_results:
                         mime="text/markdown"
                     )
 
-# Simple Fact Checker Tool
+# Quick Fact Checker with Perplexity /answer
 st.markdown("---")
 st.header("🔍 Quick Fact Checker")
 
-fact_query = st.text_input("Enter a statement to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
+fact_query = st.text_input("Enter a statement or topic to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
 
 if st.button("🔍 Verify Facts") and fact_query:
-    with st.spinner("Fact-checking..."):
-        fact_prompt = f"Fact-check this statement with current data and provide specific statistics: {fact_query}"
-        response = call_perplexity_api(fact_prompt)
-        
-        if 'choices' in response:
-            fact_result = response['choices'][0]['message']['content']
-            data_points = extract_data_points(fact_result)
-            
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                st.subheader("📋 Fact-Check Results")
-                st.markdown(fact_result)
-                
+    with st.spinner("Fact-checking via Perplexity..."):
+        response = call_perplexity_answer_api(fact_query)
+
+        if 'answer' in response:
+            st.subheader("📋 Fact-Based Answer")
+            st.markdown(response['answer'])
+
+            if 'sources' in response:
+                st.subheader("🔗 Sources & References")
+                for source in response['sources']:
+                    title = source.get("title", "Source")
+                    url = source.get("url", "")
+                    st.markdown(f"- [{title}]({url})")
+        else:
+            st.error(response.get("error", "Unknown error."))
+
                 # Show data points in table if found
                 if data_points:
                     st.subheader("📊 Extracted Data Points")
