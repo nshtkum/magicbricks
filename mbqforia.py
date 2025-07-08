@@ -26,19 +26,26 @@ st.markdown("""
         text-align: center;
         margin-bottom: 2rem;
     }
+    .feature-card {
+        background: #f8f9fa;
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    .url-input-section {
+        background: #e8f5e8;
+        border: 2px solid #28a745;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+    }
     .data-point {
         background: #e7f3ff;
         border-left: 4px solid #0066cc;
         padding: 0.75rem;
         margin: 0.5rem 0;
         border-radius: 4px;
-    }
-    .numerical-highlight {
-        background: #fff2e6;
-        color: #cc6600;
-        padding: 2px 6px;
-        border-radius: 3px;
-        font-weight: bold;
     }
     .enhancement-suggestion {
         background: #f0fff0;
@@ -101,6 +108,13 @@ if not perplexity_key or not perplexity_key.startswith('pplx-'):
     st.sidebar.warning("⚠️ Valid Perplexity API key required (starts with 'pplx-')")
 if not gemini_key:
     st.sidebar.warning("⚠️ Gemini API key required")
+
+# API Usage Display
+st.sidebar.subheader("📊 API Usage")
+st.sidebar.metric("Gemini Calls", st.session_state.api_usage['gemini_calls'])
+st.sidebar.metric("Perplexity Calls", st.session_state.api_usage['perplexity_calls'])
+estimated_cost = (st.session_state.api_usage['perplexity_calls'] * 0.002) + (st.session_state.api_usage['gemini_calls'] * 0.001)
+st.sidebar.metric("Estimated Cost", f"${estimated_cost:.3f}")
 
 # Configure Gemini
 if gemini_key:
@@ -208,7 +222,7 @@ def scrape_url_content(url, use_fallback=False):
     except Exception as e:
         return None, f"Parsing error: {str(e)}"
 
-# API Functions (keeping existing ones and adding new)
+# API Functions
 def call_perplexity_api(query):
     """Call Perplexity API for research"""
     try:
@@ -256,42 +270,6 @@ def call_perplexity_api(query):
             
             error_details = response.text if response.text else "No error details"
             return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
-        else:
-            error_details = response.text if response.text else "No error details"
-            return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
-    
-    except Exception as e:
-        return {"error": f"Exception occurred: {str(e)}"}
-
-def call_perplexity_answer_api(query):
-    """Call Perplexity Answer API for fact-checking"""
-    try:
-        headers = {
-            "Authorization": f"Bearer {perplexity_key}",
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "model": "sonar-pro",
-            "messages": [
-                {"role": "user", "content": f"Please provide a factual answer with sources for: {query}"}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 800
-        }
-        
-        response = requests.post("https://api.perplexity.ai/chat/completions", 
-                               headers=headers, json=data, timeout=30)
-        
-        if response.status_code == 200:
-            st.session_state.api_usage['perplexity_calls'] += 1
-            result = response.json()
-            
-            if 'choices' in result and result['choices']:
-                answer = result['choices'][0]['message']['content']
-                return {"answer": answer, "sources": []}
-            else:
-                return {"error": "No answer received"}
         else:
             error_details = response.text if response.text else "No error details"
             return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
@@ -353,7 +331,6 @@ def extract_data_points(text):
     
     return unique_data_points
 
-# Content Analysis Functions
 def analyze_content_structure(content):
     """Analyze content structure and extract key topics"""
     try:
@@ -464,19 +441,309 @@ def generate_enhancement_suggestions(content, analysis):
         st.error(f"Error generating suggestions: {e}")
         return None
 
-# Query Fan-Out Functions (keeping existing)
-def QUERY_FANOUT_PROMPT(q, mode):
-    min_queries_simple = 10
-    min_queries_complex = 20
+# ========================================
+# MAIN FEATURE: URL CONTENT ANALYSIS
+# ========================================
 
-    if mode == "AI Overview (simple)":
-        target = min_queries_simple
-        instruction = f"Generate {min_queries_simple}-{min_queries_simple + 2} queries for a simple overview"
-    else:
-        target = min_queries_complex
-        instruction = f"Generate {min_queries_complex}-{min_queries_complex + 5} queries for comprehensive analysis"
+st.markdown("""
+<div class="url-input-section">
+    <h2>🔗 NEW: URL Content Analysis & Enhancement</h2>
+    <p><strong>Analyze any article URL and get AI-powered enhancement suggestions!</strong></p>
+</div>
+""", unsafe_allow_html=True)
 
-    return f"""
+# URL Input Section
+st.subheader("🌐 Analyze Article from URL")
+
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    url_input = st.text_input(
+        "📎 Enter Article URL to Analyze:",
+        placeholder="https://example.com/article-to-analyze",
+        help="Paste the full URL of any article you want to analyze and enhance"
+    )
+
+with col2:
+    use_fallback = st.checkbox("Manual fallback", help="Check if URL scraping fails")
+
+if url_input:
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔍 Analyze URL Content", type="primary", help="Scrape and analyze the article"):
+            with st.spinner("🔄 Scraping and analyzing content..."):
+                # Try to scrape URL
+                scraped_data, error = scrape_url_content(url_input, use_fallback)
+                
+                if scraped_data:
+                    content = scraped_data['content']
+                    metadata = scraped_data['metadata']
+                    
+                    # Display metadata
+                    st.success("✅ Content successfully scraped and analyzed!")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Word Count", metadata['word_count'])
+                    with col2:
+                        st.metric("Characters", metadata['char_count'])
+                    with col3:
+                        st.metric("Title", "✅" if metadata['title'] != 'No title found' else "❌")
+                    with col4:
+                        st.metric("Status", "✅ Scraped")
+                    
+                    # Store content for analysis
+                    st.session_state.scraped_content = content
+                    st.session_state.content_metadata = metadata
+                    
+                    # Show content preview
+                    with st.expander("👀 Scraped Content Preview"):
+                        st.markdown(f"**Title:** {metadata['title']}")
+                        st.markdown(f"**Source:** {metadata['url']}")
+                        st.text_area("Content Preview", content[:1000] + "..." if len(content) > 1000 else content, height=200, disabled=True)
+                    
+                    # Auto-analyze content
+                    with st.spinner("🧠 Performing AI analysis..."):
+                        # Analyze content structure
+                        analysis = analyze_content_structure(content)
+                        
+                        if analysis:
+                            st.session_state.content_analysis = analysis
+                            
+                            # Generate enhancement suggestions
+                            suggestions = generate_enhancement_suggestions(content, analysis)
+                            if suggestions:
+                                st.session_state.enhancement_suggestions = suggestions
+                
+                else:
+                    st.error(f"❌ Failed to scrape content: {error}")
+                    st.info("💡 Please use the manual input option below")
+    
+    with col2:
+        if st.button("📝 Use Manual Input", help="Paste content manually if URL scraping fails"):
+            st.session_state.show_manual_input = True
+
+# Manual Content Input (Fallback)
+if 'show_manual_input' in st.session_state or (url_input and use_fallback):
+    st.markdown("---")
+    st.subheader("📝 Manual Content Input")
+    st.info("If URL scraping doesn't work, paste the content manually:")
+    
+    fallback_content = st.text_area(
+        "Paste article content here:",
+        height=300,
+        placeholder="Paste the complete article content here for analysis..."
+    )
+    
+    if st.button("📊 Analyze Pasted Content", type="secondary") and fallback_content:
+        st.session_state.scraped_content = fallback_content
+        st.session_state.content_metadata = {
+            'word_count': len(fallback_content.split()),
+            'char_count': len(fallback_content),
+            'title': 'Manual Input',
+            'url': url_input or 'Manual Input',
+            'scraped_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+        # Auto-analyze pasted content
+        with st.spinner("🧠 Analyzing content..."):
+            analysis = analyze_content_structure(fallback_content)
+            if analysis:
+                st.session_state.content_analysis = analysis
+                suggestions = generate_enhancement_suggestions(fallback_content, analysis)
+                if suggestions:
+                    st.session_state.enhancement_suggestions = suggestions
+        
+        st.success("✅ Content analyzed!")
+
+# Display Analysis Results
+if 'content_analysis' in st.session_state and st.session_state.content_analysis:
+    st.markdown("---")
+    st.header("📊 Content Analysis Results")
+    
+    analysis = st.session_state.content_analysis
+    
+    # Content Metrics Overview
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**📈 Content Metrics**")
+        metrics_df = pd.DataFrame([
+            {"Metric": "Content Type", "Value": analysis.get('content_type', 'N/A')},
+            {"Metric": "Tone", "Value": analysis.get('tone', 'N/A')},
+            {"Metric": "Target Audience", "Value": analysis.get('target_audience', 'N/A')},
+            {"Metric": "Readability", "Value": analysis.get('readability_level', 'N/A')}
+        ])
+        st.dataframe(metrics_df, hide_index=True, use_container_width=True)
+    
+    with col2:
+        st.markdown("**📝 Main Topics**")
+        topics = analysis.get('main_topics', [])
+        for i, topic in enumerate(topics[:5], 1):
+            st.markdown(f"{i}. {topic}")
+    
+    with col3:
+        st.markdown("**🎯 Key Sections**")
+        sections = analysis.get('key_sections', [])
+        for section in sections[:3]:
+            st.markdown(f"• {section}")
+
+# Display Enhancement Suggestions
+if 'enhancement_suggestions' in st.session_state and st.session_state.enhancement_suggestions:
+    st.markdown("---")
+    st.header("🚀 AI Enhancement Suggestions")
+    
+    suggestions = st.session_state.enhancement_suggestions
+    
+    # Missing Data Points
+    missing_data = suggestions.get('missing_data_points', [])
+    if missing_data:
+        st.subheader("📊 Missing Data Points")
+        for data_point in missing_data:
+            priority_color = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(data_point.get('priority', 'medium'), "🟡")
+            st.markdown(f"""
+            <div class="enhancement-suggestion">
+                <strong>{priority_color} {data_point.get('category', 'Data Point')}</strong><br>
+                <strong>Suggestion:</strong> {data_point.get('suggestion', '')}<br>
+                <strong>Example:</strong> {data_point.get('example', '')}<br>
+                <strong>Why:</strong> {data_point.get('reasoning', '')}
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Topic Expansions
+    topic_expansions = suggestions.get('topic_expansions', [])
+    if topic_expansions:
+        st.subheader("📈 Topic Expansion Opportunities")
+        for expansion in topic_expansions:
+            current_coverage = expansion.get('current_coverage', 'unknown')
+            coverage_emoji = {"brief": "📝", "moderate": "📄", "detailed": "📚"}.get(current_coverage, "📝")
+            
+            st.markdown(f"""
+            <div class="content-analysis">
+                <strong>{coverage_emoji} Topic: {expansion.get('topic', '')}</strong><br>
+                <strong>Current Coverage:</strong> {current_coverage}<br>
+                <strong>Suggested Additions:</strong>
+            """, unsafe_allow_html=True)
+            
+            additions = expansion.get('suggested_additions', [])
+            for addition in additions:
+                st.markdown(f"• {addition}")
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Export Enhancement Report
+    st.subheader("📤 Export Enhancement Report")
+    
+    # Create comprehensive report
+    enhancement_report = {
+        'content_metadata': st.session_state.content_metadata,
+        'analysis': st.session_state.content_analysis,
+        'suggestions': st.session_state.enhancement_suggestions,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    }
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # JSON Export
+        report_json = json.dumps(enhancement_report, indent=2, default=str)
+        st.download_button(
+            "📋 Download Analysis JSON",
+            data=report_json,
+            file_name=f"content_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json"
+        )
+    
+    with col2:
+        # CSV Export for data points
+        export_data = []
+        for suggestion_type, suggestions_list in enhancement_report['suggestions'].items():
+            if isinstance(suggestions_list, list):
+                for item in suggestions_list:
+                    if isinstance(item, dict):
+                        export_data.append({
+                            'Type': suggestion_type,
+                            'Category': item.get('category', item.get('area', item.get('type', 'N/A'))),
+                            'Suggestion': item.get('suggestion', item.get('improvement', item.get('topic', 'N/A'))),
+                            'Priority': item.get('priority', 'N/A'),
+                            'Implementation': item.get('implementation', item.get('reasoning', 'N/A'))
+                        })
+        
+        if export_data:
+            export_df = pd.DataFrame(export_data)
+            csv_data = export_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "📊 Download Suggestions CSV",
+                data=csv_data,
+                file_name=f"enhancement_suggestions_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
+    
+    with col3:
+        # Content Brief
+        brief = f"""# Content Enhancement Brief
+
+**Original Source:** {enhancement_report['content_metadata']['url']}
+**Analysis Date:** {enhancement_report['generated_at']}
+**Word Count:** {enhancement_report['content_metadata']['word_count']}
+
+## Content Analysis Summary
+
+**Content Type:** {enhancement_report['analysis'].get('content_type', 'N/A')}
+**Target Audience:** {enhancement_report['analysis'].get('target_audience', 'N/A')}
+**Tone:** {enhancement_report['analysis'].get('tone', 'N/A')}
+
+## Key Enhancement Opportunities
+
+### High-Priority Data Points to Add
+"""
+        
+        # Add missing data points
+        for data_point in enhancement_report['suggestions'].get('missing_data_points', []):
+            if data_point.get('priority') == 'high':
+                brief += f"- {data_point.get('suggestion', '')}: {data_point.get('example', '')}\n"
+        
+        brief += "\n### Topics to Expand\n"
+        for expansion in enhancement_report['suggestions'].get('topic_expansions', []):
+            brief += f"- **{expansion.get('topic', '')}**: Currently {expansion.get('current_coverage', 'unknown')} coverage\n"
+        
+        st.download_button(
+            "📝 Enhancement Brief",
+            data=brief,
+            file_name=f"enhancement_brief_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown"
+        )
+
+# ========================================
+# OTHER FEATURES
+# ========================================
+
+st.markdown("---")
+st.header("🔧 Additional Features")
+
+# Feature Selection
+feature_selection = st.selectbox(
+    "Choose additional feature:",
+    ["Select a feature...", "🔍 Query Fan-Out", "🔬 Research & Fact-Check", "📊 Quick Fact Checker"]
+)
+
+if feature_selection == "🔍 Query Fan-Out":
+    st.subheader("🔍 Query Fan-Out Simulator")
+    
+    # Query Fan-Out Functions
+    def QUERY_FANOUT_PROMPT(q, mode):
+        min_queries_simple = 10
+        min_queries_complex = 20
+
+        if mode == "AI Overview (simple)":
+            target = min_queries_simple
+            instruction = f"Generate {min_queries_simple}-{min_queries_simple + 2} queries for a simple overview"
+        else:
+            target = min_queries_complex
+            instruction = f"Generate {min_queries_complex}-{min_queries_complex + 5} queries for comprehensive analysis"
+
+        return f"""
 You are simulating Google's AI Mode query fan-out process.
 Original query: "{q}"
 Mode: "{mode}"
@@ -508,41 +775,25 @@ Return only valid JSON:
 }}
 """
 
-def generate_fanout(query, mode):
-    """Generate query fan-out using Gemini"""
-    prompt = QUERY_FANOUT_PROMPT(query, mode)
-    try:
-        response = model.generate_content(prompt)
-        st.session_state.api_usage['gemini_calls'] += 1
-        
-        json_text = response.text.strip()
-        if json_text.startswith("```json"):
-            json_text = json_text[7:]
-        if json_text.endswith("```"):
-            json_text = json_text[:-3]
-        json_text = json_text.strip()
+    def generate_fanout(query, mode):
+        """Generate query fan-out using Gemini"""
+        prompt = QUERY_FANOUT_PROMPT(query, mode)
+        try:
+            response = model.generate_content(prompt)
+            st.session_state.api_usage['gemini_calls'] += 1
+            
+            json_text = response.text.strip()
+            if json_text.startswith("```json"):
+                json_text = json_text[7:]
+            if json_text.endswith("```"):
+                json_text = json_text[:-3]
+            json_text = json_text.strip()
 
-        data = json.loads(json_text)
-        return data.get("expanded_queries", []), data.get("generation_details", {})
-    except Exception as e:
-        st.error(f"Error generating fan-out: {e}")
-        return None, None
-
-# Navigation - Make tabs more prominent
-st.markdown("### 📋 Select Feature:")
-selected_tab = st.selectbox(
-    "Choose the feature you want to use:",
-    ["🔍 Query Fan-Out", "📄 Content Analysis & URL Scanner", "🔬 Research & Fact-Check", "📊 Quick Fact Checker"],
-    help="Select the feature you want to use"
-)
-
-# Show different sections based on selection
-if selected_tab == "🔍 Query Fan-Out":
-
-# Show different sections based on selection
-if selected_tab == "🔍 Query Fan-Out":
-    # TAB 1: Query Fan-Out (Original functionality)
-    st.header("🔍 Query Fan-Out Simulator")
+            data = json.loads(json_text)
+            return data.get("expanded_queries", []), data.get("generation_details", {})
+        except Exception as e:
+            st.error(f"Error generating fan-out: {e}")
+            return None, None
 
     col1, col2 = st.columns([3, 1])
 
@@ -551,9 +802,9 @@ if selected_tab == "🔍 Query Fan-Out":
         mode = st.radio("Search Mode", ["AI Overview (simple)", "AI Mode (complex)"])
 
     with col2:
-        st.subheader("📊 API Usage")
-        st.metric("Gemini Calls", st.session_state.api_usage['gemini_calls'])
-        st.metric("Perplexity Calls", st.session_state.api_usage['perplexity_calls'])
+        st.markdown("**Current Usage:**")
+        st.metric("Gemini", st.session_state.api_usage['gemini_calls'])
+        st.metric("Perplexity", st.session_state.api_usage['perplexity_calls'])
 
     if st.button("🚀 Generate Query Fan-Out", type="primary"):
         if not user_query.strip():
@@ -588,399 +839,27 @@ if selected_tab == "🔍 Query Fan-Out":
                     json_data = df.to_json(orient='records', indent=2)
                     st.download_button("📥 Download JSON", data=json_data, file_name="fanout_queries.json", mime="application/json")
 
-elif selected_tab == "📄 Content Analysis & URL Scanner":
-    # TAB 2: Content Analysis (New feature)
-    st.header("📄 Content Analysis & Enhancement")
+elif feature_selection == "🔬 Research & Fact-Check":
+    st.subheader("🔬 Research & Fact-Check Queries")
     
-    content_input_method = st.radio(
-        "Choose content input method:",
-        ["🔗 URL Analysis", "📝 Paste Content Directly"]
-    )
-    
-    if content_input_method == "🔗 URL Analysis":
-        st.subheader("🔗 URL Content Analysis")
-        
-        url_input = st.text_input(
-            "Enter the URL to analyze:",
-            placeholder="https://example.com/article",
-            help="Enter the full URL of the article you want to analyze"
-        )
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            analyze_url_btn = st.button("🔍 Analyze URL", type="primary")
-        with col2:
-            use_fallback = st.checkbox("Use manual input fallback", help="Check this if URL scraping fails")
-        
-        if analyze_url_btn and url_input:
-            with st.spinner("Scraping and analyzing content..."):
-                # Try to scrape URL
-                scraped_data, error = scrape_url_content(url_input, use_fallback)
-                
-                if scraped_data:
-                    content = scraped_data['content']
-                    metadata = scraped_data['metadata']
-                    
-                    # Display metadata
-                    st.success("✅ Content successfully scraped!")
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Word Count", metadata['word_count'])
-                    with col2:
-                        st.metric("Characters", metadata['char_count'])
-                    with col3:
-                        st.metric("Title", "Found" if metadata['title'] != 'No title found' else "Missing")
-                    with col4:
-                        st.metric("Scraped", "✅")
-                    
-                    # Store content for analysis
-                    st.session_state.scraped_content = content
-                    st.session_state.content_metadata = metadata
-                    
-                else:
-                    st.error(f"❌ Failed to scrape content: {error}")
-                    st.info("💡 Please use the 'Paste Content Directly' option below")
-                    
-                    # Automatic fallback
-                    content_input_method = "📝 Paste Content Directly"
-        
-        # Show fallback text area if scraping failed
-        if 'scraped_content' not in st.session_state and content_input_method == "🔗 URL Analysis":
-            st.markdown("---")
-            st.subheader("📝 Manual Content Input (Fallback)")
-            st.info("If URL scraping doesn't work, paste the content manually:")
-            
-            fallback_content = st.text_area(
-                "Paste article content here:",
-                height=300,
-                placeholder="Paste the article content here..."
-            )
-            
-            if st.button("📊 Analyze Pasted Content") and fallback_content:
-                st.session_state.scraped_content = fallback_content
-                st.session_state.content_metadata = {
-                    'word_count': len(fallback_content.split()),
-                    'char_count': len(fallback_content),
-                    'title': 'Manual Input',
-                    'url': url_input or 'Manual Input',
-                    'scraped_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                }
-    
-    else:  # Direct content input
-        st.subheader("📝 Direct Content Analysis")
-        
-        direct_content = st.text_area(
-            "Paste your article content here:",
-            height=300,
-            placeholder="Paste the article content you want to analyze and enhance..."
-        )
-        
-        if st.button("📊 Analyze Content", type="primary") and direct_content:
-            st.session_state.scraped_content = direct_content
-            st.session_state.content_metadata = {
-                'word_count': len(direct_content.split()),
-                'char_count': len(direct_content),
-                'title': 'Direct Input',
-                'url': 'Direct Input',
-                'scraped_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-    
-    # Content Analysis Section
-    if 'scraped_content' in st.session_state:
-        st.markdown("---")
-        st.subheader("🧠 Content Analysis Results")
-        
-        content = st.session_state.scraped_content
-        metadata = st.session_state.content_metadata
-        
-        # Show content preview
-        with st.expander("👀 Content Preview"):
-            st.markdown(f"**Title:** {metadata['title']}")
-            st.markdown(f"**Source:** {metadata['url']}")
-            st.text_area("Content Preview", content[:1000] + "..." if len(content) > 1000 else content, height=200, disabled=True)
-        
-        if st.button("🔍 Perform Deep Analysis", type="secondary"):
-            with st.spinner("Analyzing content structure and generating enhancement suggestions..."):
-                # Analyze content structure
-                analysis = analyze_content_structure(content)
-                
-                if analysis:
-                    st.session_state.content_analysis = analysis
-                    
-                    # Generate enhancement suggestions
-                    suggestions = generate_enhancement_suggestions(content, analysis)
-                    if suggestions:
-                        st.session_state.enhancement_suggestions = suggestions
-        
-        # Display Analysis Results
-        if 'content_analysis' in st.session_state and st.session_state.content_analysis:
-            analysis = st.session_state.content_analysis
-            
-            st.markdown("### 📋 Content Structure Analysis")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**📊 Content Metrics**")
-                metrics_df = pd.DataFrame([
-                    {"Metric": "Content Type", "Value": analysis.get('content_type', 'N/A')},
-                    {"Metric": "Tone", "Value": analysis.get('tone', 'N/A')},
-                    {"Metric": "Target Audience", "Value": analysis.get('target_audience', 'N/A')},
-                    {"Metric": "Readability", "Value": analysis.get('readability_level', 'N/A')},
-                    {"Metric": "Writing Style", "Value": analysis.get('writing_style', 'N/A')}
-                ])
-                st.dataframe(metrics_df, hide_index=True, use_container_width=True)
-            
-            with col2:
-                st.markdown("**📝 Content Topics**")
-                topics = analysis.get('main_topics', [])
-                for i, topic in enumerate(topics[:5], 1):
-                    st.markdown(f"{i}. {topic}")
-                
-                st.markdown("**🎯 Key Sections**")
-                sections = analysis.get('key_sections', [])
-                for section in sections[:3]:
-                    st.markdown(f"• {section}")
-            
-            # Content Strengths
-            strengths = analysis.get('strengths', [])
-            if strengths:
-                st.markdown("**✅ Content Strengths**")
-                for strength in strengths:
-                    st.markdown(f"""
-                    <div class="enhancement-suggestion">
-                        <strong>Strength:</strong> {strength}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Content Gaps
-            gaps = analysis.get('content_gaps', [])
-            if gaps:
-                st.markdown("**⚠️ Content Gaps Identified**")
-                for gap in gaps:
-                    st.markdown(f"""
-                    <div class="missing-topic">
-                        <strong>Missing:</strong> {gap}
-                    </div>
-                    """, unsafe_allow_html=True)
-        
-        # Display Enhancement Suggestions
-        if 'enhancement_suggestions' in st.session_state and st.session_state.enhancement_suggestions:
-            suggestions = st.session_state.enhancement_suggestions
-            
-            st.markdown("---")
-            st.markdown("### 🚀 Enhancement Suggestions")
-            
-            # Missing Data Points
-            missing_data = suggestions.get('missing_data_points', [])
-            if missing_data:
-                st.markdown("#### 📊 Missing Data Points")
-                for data_point in missing_data:
-                    priority_color = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(data_point.get('priority', 'medium'), "🟡")
-                    st.markdown(f"""
-                    <div class="content-analysis">
-                        <strong>{priority_color} {data_point.get('category', 'Data Point')}</strong><br>
-                        <strong>Suggestion:</strong> {data_point.get('suggestion', '')}<br>
-                        <strong>Example:</strong> {data_point.get('example', '')}<br>
-                        <strong>Why:</strong> {data_point.get('reasoning', '')}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Topic Expansions
-            topic_expansions = suggestions.get('topic_expansions', [])
-            if topic_expansions:
-                st.markdown("#### 📈 Topic Expansion Opportunities")
-                for expansion in topic_expansions:
-                    current_coverage = expansion.get('current_coverage', 'unknown')
-                    coverage_emoji = {"brief": "📝", "moderate": "📄", "detailed": "📚"}.get(current_coverage, "📝")
-                    
-                    st.markdown(f"""
-                    <div class="content-analysis">
-                        <strong>{coverage_emoji} Topic: {expansion.get('topic', '')}</strong><br>
-                        <strong>Current Coverage:</strong> {current_coverage}<br>
-                        <strong>Suggested Additions:</strong>
-                    """, unsafe_allow_html=True)
-                    
-                    additions = expansion.get('suggested_additions', [])
-                    for addition in additions:
-                        st.markdown(f"• {addition}")
-                    
-                    subtopics = expansion.get('potential_subtopics', [])
-                    if subtopics:
-                        st.markdown("**Potential Subtopics:**")
-                        for subtopic in subtopics:
-                            st.markdown(f"• {subtopic}")
-                    
-                    st.markdown("</div>", unsafe_allow_html=True)
-            
-            # Content Improvements
-            content_improvements = suggestions.get('content_improvements', [])
-            if content_improvements:
-                st.markdown("#### ✨ Content Improvements")
-                for improvement in content_improvements:
-                    area_emoji = {
-                        "Structure": "🏗️", 
-                        "Data": "📊", 
-                        "Examples": "💡", 
-                        "Sources": "📚"
-                    }.get(improvement.get('area', ''), "🔧")
-                    
-                    st.markdown(f"""
-                    <div class="enhancement-suggestion">
-                        <strong>{area_emoji} {improvement.get('area', 'Improvement')}</strong><br>
-                        <strong>Improvement:</strong> {improvement.get('improvement', '')}<br>
-                        <strong>How to implement:</strong> {improvement.get('implementation', '')}<br>
-                        <strong>Expected impact:</strong> {improvement.get('impact', '')}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # SEO Enhancements
-            seo_enhancements = suggestions.get('seo_enhancements', [])
-            if seo_enhancements:
-                st.markdown("#### 🔍 SEO Enhancement Opportunities")
-                for seo in seo_enhancements:
-                    seo_emoji = {
-                        "Keywords": "🔑", 
-                        "Headers": "📋", 
-                        "Meta": "🏷️"
-                    }.get(seo.get('type', ''), "🔍")
-                    
-                    st.markdown(f"""
-                    <div class="content-analysis">
-                        <strong>{seo_emoji} {seo.get('type', 'SEO')}</strong><br>
-                        <strong>Suggestion:</strong> {seo.get('suggestion', '')}<br>
-                        <strong>Implementation:</strong> {seo.get('implementation', '')}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Fact Check Needed
-            fact_checks = suggestions.get('fact_check_needed', [])
-            if fact_checks:
-                st.markdown("#### 🔍 Claims Requiring Fact-Checking")
-                for fact in fact_checks:
-                    priority_color = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(fact.get('priority', 'medium'), "🟡")
-                    st.markdown(f"""
-                    <div class="missing-topic">
-                        <strong>{priority_color} Claim to Verify:</strong> {fact.get('claim', '')}<br>
-                        <strong>Reason:</strong> {fact.get('reason', '')}
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            # Export Enhancement Report
-            st.markdown("#### 📤 Export Enhancement Report")
-            
-            # Create comprehensive report
-            enhancement_report = {
-                'content_metadata': st.session_state.content_metadata,
-                'analysis': st.session_state.content_analysis,
-                'suggestions': st.session_state.enhancement_suggestions,
-                'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                # JSON Export
-                report_json = json.dumps(enhancement_report, indent=2, default=str)
-                st.download_button(
-                    "📋 Download Analysis JSON",
-                    data=report_json,
-                    file_name=f"content_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                    mime="application/json"
-                )
-            
-            with col2:
-                # CSV Export for data points
-                export_data = []
-                for suggestion_type, suggestions_list in enhancement_report['suggestions'].items():
-                    if isinstance(suggestions_list, list):
-                        for item in suggestions_list:
-                            if isinstance(item, dict):
-                                export_data.append({
-                                    'Type': suggestion_type,
-                                    'Category': item.get('category', item.get('area', item.get('type', 'N/A'))),
-                                    'Suggestion': item.get('suggestion', item.get('improvement', item.get('topic', 'N/A'))),
-                                    'Priority': item.get('priority', 'N/A'),
-                                    'Implementation': item.get('implementation', item.get('reasoning', 'N/A'))
-                                })
-                
-                if export_data:
-                    export_df = pd.DataFrame(export_data)
-                    csv_data = export_df.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "📊 Download Suggestions CSV",
-                        data=csv_data,
-                        file_name=f"enhancement_suggestions_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
-            
-            with col3:
-                # Content Brief
-                brief = f"""# Content Enhancement Brief
-
-**Original Source:** {enhancement_report['content_metadata']['url']}
-**Analysis Date:** {enhancement_report['generated_at']}
-**Word Count:** {enhancement_report['content_metadata']['word_count']}
-
-## Content Analysis Summary
-
-**Content Type:** {enhancement_report['analysis'].get('content_type', 'N/A')}
-**Target Audience:** {enhancement_report['analysis'].get('target_audience', 'N/A')}
-**Tone:** {enhancement_report['analysis'].get('tone', 'N/A')}
-
-## Key Enhancement Opportunities
-
-### High-Priority Data Points to Add
-"""
-                
-                # Add missing data points
-                for data_point in enhancement_report['suggestions'].get('missing_data_points', []):
-                    if data_point.get('priority') == 'high':
-                        brief += f"- {data_point.get('suggestion', '')}: {data_point.get('example', '')}\n"
-                
-                brief += "\n### Topics to Expand\n"
-                for expansion in enhancement_report['suggestions'].get('topic_expansions', []):
-                    brief += f"- **{expansion.get('topic', '')}**: Currently {expansion.get('current_coverage', 'unknown')} coverage\n"
-                    for addition in expansion.get('suggested_additions', []):
-                        brief += f"  - {addition}\n"
-                
-                brief += "\n### SEO Improvements\n"
-                for seo in enhancement_report['suggestions'].get('seo_enhancements', []):
-                    brief += f"- {seo.get('type', '')}: {seo.get('suggestion', '')}\n"
-                
-                brief += "\n### Facts to Verify\n"
-                for fact in enhancement_report['suggestions'].get('fact_check_needed', []):
-                    brief += f"- {fact.get('claim', '')}\n"
-                
-                st.download_button(
-                    "📝 Enhancement Brief",
-                    data=brief,
-                    file_name=f"enhancement_brief_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                    mime="text/markdown"
-                )
-
-elif selected_tab == "🔬 Research & Fact-Check":
-    # TAB 3: Research & Fact-Check (Enhanced with content-aware research)
-    st.header("🔬 Research & Fact-Check Queries")
-    
-    # Show different options based on available data
+    # Research source selection
     research_source = st.radio(
         "Research based on:",
         ["🔍 Fan-out queries", "📄 Content analysis suggestions", "✍️ Custom queries"]
     )
     
+    selected_queries = []
+    
     if research_source == "🔍 Fan-out queries":
         if st.session_state.fanout_results:
             query_options = [f"{i+1}. {q['query']}" for i, q in enumerate(st.session_state.fanout_results)]
             selected_queries = st.multiselect(
-                "Select queries to research (max 10 for cost control):",
+                "Select queries to research (max 10):",
                 options=query_options,
                 default=query_options[:5] if len(query_options) > 5 else query_options
             )
         else:
-            st.info("No fan-out queries available. Please generate queries in the Query Fan-Out tab first.")
-            selected_queries = []
+            st.info("No fan-out queries available. Please generate queries first.")
     
     elif research_source == "📄 Content analysis suggestions":
         if 'enhancement_suggestions' in st.session_state and st.session_state.enhancement_suggestions:
@@ -1000,11 +879,6 @@ elif selected_tab == "🔬 Research & Fact-Check":
                     query = f"Research {expansion.get('topic', '')}: {addition}"
                     research_queries.append(query)
             
-            # From fact checks
-            for fact in suggestions.get('fact_check_needed', []):
-                query = f"Verify: {fact.get('claim', '')}"
-                research_queries.append(query)
-            
             if research_queries:
                 selected_queries = st.multiselect(
                     "Select enhancement-based research queries (max 10):",
@@ -1012,14 +886,11 @@ elif selected_tab == "🔬 Research & Fact-Check":
                     default=research_queries[:5] if len(research_queries) > 5 else research_queries
                 )
             else:
-                st.info("No content analysis suggestions available. Please analyze content in the Content Analysis tab first.")
-                selected_queries = []
+                st.info("No content analysis suggestions available. Please analyze content first.")
         else:
-            st.info("No content analysis available. Please analyze content in the Content Analysis tab first.")
-            selected_queries = []
+            st.info("No content analysis available. Please analyze content first.")
     
     else:  # Custom queries
-        st.subheader("✍️ Custom Research Queries")
         custom_queries_text = st.text_area(
             "Enter custom research queries (one per line):",
             placeholder="Latest Bangalore real estate prices 2024\nBangalore infrastructure development projects\nBangalore job market growth statistics",
@@ -1033,10 +904,8 @@ elif selected_tab == "🔬 Research & Fact-Check":
                 options=custom_queries,
                 default=custom_queries[:5] if len(custom_queries) > 5 else custom_queries
             )
-        else:
-            selected_queries = []
     
-    # Research configuration
+    # Research execution
     if selected_queries:
         research_focus = st.selectbox("Research Focus", [
             "Market Data & Statistics",
@@ -1049,7 +918,7 @@ elif selected_tab == "🔬 Research & Fact-Check":
         
         if st.button("🔍 Start Research & Fact-Check", type="secondary"):
             if len(selected_queries) > 10:
-                st.warning("Limited to 10 queries to control API costs. Please select fewer queries.")
+                st.warning("Limited to 10 queries to control API costs.")
             else:
                 research_results = []
                 progress_bar = st.progress(0)
@@ -1101,11 +970,11 @@ elif selected_tab == "🔬 Research & Fact-Check":
                 progress_bar.progress(1.0)
                 st.session_state.research_data = research_results
                 
-                # Display Research Results
+                # Display results
                 st.success(f"✅ Research completed for {len(research_results)} queries!")
                 
                 # Summary metrics
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     st.metric("Queries Researched", len(research_results))
                 with col2:
@@ -1114,12 +983,8 @@ elif selected_tab == "🔬 Research & Fact-Check":
                 with col3:
                     successful = sum(1 for r in research_results if 'Error:' not in r['research_content'])
                     st.metric("Success Rate", f"{(successful/len(research_results)*100):.0f}%")
-                with col4:
-                    st.metric("Research Focus", research_focus.split('&')[0])
                 
                 # Research Results Display
-                st.subheader("📊 Research Results")
-                
                 for i, result in enumerate(research_results):
                     with st.expander(f"📋 {result['query'][:80]}..."):
                         st.markdown("**Research Findings:**")
@@ -1138,100 +1003,53 @@ elif selected_tab == "🔬 Research & Fact-Check":
                             
                             if df_data:
                                 data_df = pd.DataFrame(df_data)
-                                st.dataframe(
-                                    data_df,
-                                    use_container_width=True,
-                                    column_config={
-                                        "Value": st.column_config.TextColumn("Value", width="small"),
-                                        "Type": st.column_config.TextColumn("Type", width="small"),
-                                        "Description": st.column_config.TextColumn("Context/Description", width="large")
-                                    },
-                                    hide_index=True
-                                )
-                        else:
-                            st.info("No specific data points extracted from this research.")
+                                st.dataframe(data_df, hide_index=True, use_container_width=True)
                         
                         st.caption(f"Researched on: {result['timestamp']}")
-                
-                # Export Research Data
-                st.subheader("📤 Export Research Data")
-                
-                export_data = []
-                for result in research_results:
-                    for dp in result.get('data_points', []):
-                        export_data.append({
-                            'Research_Query': result['query'],
-                            'Data_Value': dp['value'],
-                            'Data_Type': dp['type'],
-                            'Context_Description': dp['description'],
-                            'Research_Focus': research_focus,
-                            'Timestamp': result['timestamp']
-                        })
-                    
-                    if not result.get('data_points'):
-                        export_data.append({
-                            'Research_Query': result['query'],
-                            'Data_Value': 'No data extracted',
-                            'Data_Type': 'N/A',
-                            'Context_Description': result['research_content'][:200] + '...',
-                            'Research_Focus': research_focus,
-                            'Timestamp': result['timestamp']
-                        })
-                
-                research_df = pd.DataFrame(export_data)
-                
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    research_csv = research_df.to_csv(index=False).encode("utf-8")
-                    st.download_button(
-                        "📊 Download Research CSV",
-                        data=research_csv,
-                        file_name=f"research_data_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    research_json = json.dumps(research_results, indent=2, default=str)
-                    st.download_button(
-                        "📋 Download Research JSON", 
-                        data=research_json,
-                        file_name=f"research_data_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                        mime="application/json"
-                    )
-                
-                with col3:
-                    brief = f"""# Research Brief
 
-**Research Date:** {datetime.now().strftime('%Y-%m-%d %H:%M')}
-**Focus Area:** {research_focus}
-**Queries Researched:** {len(research_results)}
+elif feature_selection == "📊 Quick Fact Checker":
+    st.subheader("🔍 Quick Fact Checker")
 
-## Research Summary
+    def call_perplexity_answer_api(query):
+        """Call Perplexity Answer API for fact-checking"""
+        try:
+            headers = {
+                "Authorization": f"Bearer {perplexity_key}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": "sonar-pro",
+                "messages": [
+                    {"role": "user", "content": f"Please provide a factual answer with sources for: {query}"}
+                ],
+                "temperature": 0.1,
+                "max_tokens": 800
+            }
+            
+            response = requests.post("https://api.perplexity.ai/chat/completions", 
+                                   headers=headers, json=data, timeout=30)
+            
+            if response.status_code == 200:
+                st.session_state.api_usage['perplexity_calls'] += 1
+                result = response.json()
+                
+                if 'choices' in result and result['choices']:
+                    answer = result['choices'][0]['message']['content']
+                    return {"answer": answer, "sources": []}
+                else:
+                    return {"error": "No answer received"}
+            else:
+                error_details = response.text if response.text else "No error details"
+                return {"error": f"API call failed with status {response.status_code}. Details: {error_details}"}
+        
+        except Exception as e:
+            return {"error": f"Exception occurred: {str(e)}"}
 
-"""
-                    for result in research_results:
-                        brief += f"\n### {result['query']}\n"
-                        brief += f"{result['research_content'][:300]}...\n"
-                        
-                        if result.get('data_points'):
-                            brief += f"\n**Key Data Found:**\n"
-                            for dp in result['data_points'][:5]:
-                                brief += f"- **{dp['value']}** ({dp['type']}): {dp['description'][:100]}...\n"
-                        brief += "\n---\n"
-                    
-                    st.download_button(
-                        "📝 Research Brief",
-                        data=brief,
-                        file_name=f"research_brief_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                        mime="text/markdown"
-                    )
-
-elif selected_tab == "📊 Quick Fact Checker":
-    # TAB 4: Quick Fact Checker (Enhanced)
-    st.header("🔍 Quick Fact Checker")
-
-    fact_query = st.text_input("Enter a statement or topic to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
+    fact_query = st.text_input(
+        "Enter a statement or topic to fact-check:", 
+        placeholder="e.g., Bangalore property prices increased by 15% in 2024"
+    )
 
     if st.button("🔍 Verify Facts") and fact_query:
         with st.spinner("Fact-checking via Perplexity..."):
@@ -1257,16 +1075,7 @@ elif selected_tab == "📊 Quick Fact Checker":
                             })
                         
                         fact_df = pd.DataFrame(df_data)
-                        st.dataframe(
-                            fact_df,
-                            use_container_width=True,
-                            column_config={
-                                "Value": st.column_config.TextColumn("Value", width="small"),
-                                "Type": st.column_config.TextColumn("Type", width="small"),
-                                "Description": st.column_config.TextColumn("Context", width="large")
-                            },
-                            hide_index=True
-                        )
+                        st.dataframe(fact_df, hide_index=True, use_container_width=True)
                 
                 with col2:
                     st.subheader("📊 Summary")
@@ -1274,79 +1083,33 @@ elif selected_tab == "📊 Quick Fact Checker":
                     if data_points:
                         for dp in data_points[:3]:
                             st.markdown(f"• **{dp['value']}** ({dp['type']})")
-                            
-                if 'sources' in response and response['sources']:
-                    st.subheader("🔗 Sources & References")
-                    for source in response['sources']:
-                        title = source.get("title", "Source")
-                        url = source.get("url", "")
-                        st.markdown(f"- [{title}]({url})")
             else:
                 st.error(response.get("error", "Unknown error."))
 
-# Footer with enhanced metrics and controls
+# Footer
 st.markdown("---")
+st.subheader("🎯 Quick Actions & Help")
+
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric("Total Gemini Calls", st.session_state.api_usage['gemini_calls'])
-    st.metric("Total Perplexity Calls", st.session_state.api_usage['perplexity_calls'])
-
-with col2:
-    estimated_cost = (st.session_state.api_usage['perplexity_calls'] * 0.002) + (st.session_state.api_usage['gemini_calls'] * 0.001)
-    st.metric("Estimated Cost", f"${estimated_cost:.3f}")
-
-with col3:
-    # Session summary
-    features_used = []
-    if st.session_state.fanout_results:
-        features_used.append("Query Fan-out")
-    if 'content_analysis' in st.session_state:
-        features_used.append("Content Analysis")
-    if st.session_state.research_data:
-        features_used.append("Research")
-    
-    st.metric("Features Used", len(features_used))
-    if features_used:
-        st.caption("Active: " + ", ".join(features_used))
-
-with col4:
     if st.button("🗑️ Clear All Data"):
         # Clear all session state
-        for key in ['fanout_results', 'research_data', 'content_analysis', 'enhancement_suggestions', 'scraped_content', 'content_metadata']:
+        for key in ['fanout_results', 'research_data', 'content_analysis', 'enhancement_suggestions', 'scraped_content', 'content_metadata', 'show_manual_input']:
             if key in st.session_state:
                 del st.session_state[key]
         st.success("All data cleared!")
         st.rerun()
 
-# Additional Features Section
-st.markdown("---")
-st.markdown("### 🎯 Quick Actions")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("📊 View API Usage Details"):
-        st.info(f"""
-        **API Usage Summary:**
-        - Gemini Calls: {st.session_state.api_usage['gemini_calls']}
-        - Perplexity Calls: {st.session_state.api_usage['perplexity_calls']}
-        - Estimated Cost: ${estimated_cost:.3f}
-        
-        **Rate Limits:**
-        - Perplexity: ~100 requests/hour
-        - Gemini: ~1000 requests/minute
-        """)
-
 with col2:
     if st.button("💡 Usage Tips"):
         st.info("""
         **Pro Tips:**
-        1. Use URL analysis for competitor content research
-        2. Generate fan-out queries for comprehensive topic coverage
-        3. Cross-reference research data with fact-checker
+        1. Start with URL analysis for quick content insights
+        2. Use manual input if URL scraping fails
+        3. Generate research queries from content analysis
         4. Export data for offline analysis
-        5. Use content analysis to identify content gaps
+        5. Cross-reference facts with fact-checker
         """)
 
 with col3:
@@ -1355,11 +1118,28 @@ with col3:
         **Common Issues:**
         1. **URL Scraping Fails:** Use manual content input
         2. **API Errors:** Check API keys and rate limits
-        3. **No Data Points:** Try different research focus
-        4. **Analysis Fails:** Content might be too short
-        5. **Rate Limited:** Wait and retry
+        3. **No Analysis Results:** Content might be too short
+        4. **Rate Limited:** Wait and retry
+        """)
+
+with col4:
+    if st.button("📊 View Session Stats"):
+        features_used = []
+        if st.session_state.fanout_results:
+            features_used.append("Query Fan-out")
+        if 'content_analysis' in st.session_state:
+            features_used.append("Content Analysis")
+        if st.session_state.research_data:
+            features_used.append("Research")
+        
+        st.info(f"""
+        **Session Statistics:**
+        - Features Used: {len(features_used)}
+        - Active Features: {', '.join(features_used) if features_used else 'None'}
+        - Total API Calls: {st.session_state.api_usage['gemini_calls'] + st.session_state.api_usage['perplexity_calls']}
+        - Estimated Cost: ${estimated_cost:.3f}
         """)
 
 st.markdown("---")
 st.markdown("**Qforia Pro Enhanced v3.0** - Advanced Query Research & Content Analysis Tool")
-st.markdown("*Features: Query Fan-out, URL Content Analysis, Enhancement Suggestions, Research Automation, Fact-Checking*")
+st.markdown("*🌟 NEW: URL Content Analysis with AI-Powered Enhancement Suggestions*")
