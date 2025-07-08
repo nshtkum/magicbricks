@@ -528,11 +528,20 @@ def generate_fanout(query, mode):
         st.error(f"Error generating fan-out: {e}")
         return None, None
 
-# Main App with Tabs
-tab1, tab2, tab3, tab4 = st.tabs(["🔍 Query Fan-Out", "📄 Content Analysis", "🔬 Research & Fact-Check", "📊 Quick Fact Checker"])
+# Navigation - Make tabs more prominent
+st.markdown("### 📋 Select Feature:")
+selected_tab = st.selectbox(
+    "Choose the feature you want to use:",
+    ["🔍 Query Fan-Out", "📄 Content Analysis & URL Scanner", "🔬 Research & Fact-Check", "📊 Quick Fact Checker"],
+    help="Select the feature you want to use"
+)
 
-# TAB 1: Query Fan-Out (Original functionality)
-with tab1:
+# Show different sections based on selection
+if selected_tab == "🔍 Query Fan-Out":
+
+# Show different sections based on selection
+if selected_tab == "🔍 Query Fan-Out":
+    # TAB 1: Query Fan-Out (Original functionality)
     st.header("🔍 Query Fan-Out Simulator")
 
     col1, col2 = st.columns([3, 1])
@@ -579,8 +588,8 @@ with tab1:
                     json_data = df.to_json(orient='records', indent=2)
                     st.download_button("📥 Download JSON", data=json_data, file_name="fanout_queries.json", mime="application/json")
 
-# TAB 2: Content Analysis (New feature)
-with tab2:
+elif selected_tab == "📄 Content Analysis & URL Scanner":
+    # TAB 2: Content Analysis (New feature)
     st.header("📄 Content Analysis & Enhancement")
     
     content_input_method = st.radio(
@@ -951,8 +960,8 @@ with tab2:
                     mime="text/markdown"
                 )
 
-# TAB 3: Research & Fact-Check (Enhanced with content-aware research)
-with tab3:
+elif selected_tab == "🔬 Research & Fact-Check":
+    # TAB 3: Research & Fact-Check (Enhanced with content-aware research)
     st.header("🔬 Research & Fact-Check Queries")
     
     # Show different options based on available data
@@ -1218,8 +1227,8 @@ with tab3:
                         mime="text/markdown"
                     )
 
-# TAB 4: Quick Fact Checker (Enhanced)
-with tab4:
+elif selected_tab == "📊 Quick Fact Checker":
+    # TAB 4: Quick Fact Checker (Enhanced)
     st.header("🔍 Quick Fact Checker")
 
     fact_query = st.text_input("Enter a statement or topic to fact-check:", placeholder="e.g., Bangalore property prices increased by 15% in 2024")
